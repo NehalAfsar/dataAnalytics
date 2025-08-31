@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Dashboard Tool</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <style>
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 20px 0;
+        }
+        .draggable {
+            cursor: move;
+        }
+        .dragging {
+            opacity: 0.5;
+        }
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+        .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .filter-section {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .chart-controls {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 1000;
+            animation: slideIn 0.3s ease-out;
+        }
+        .notification.success {
+            background-color: #10b981;
+        }
+        .notification.error {
+            background-color: #ef4444;
+        }
+        .notification.warning {
+            background-color: #f59e0b;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .theme-dark {
+            background-color: #1f2937;
+            color: #f9fafb;
+        }
+        .theme-dark .bg-white {
+            background-color: #374151 !important;
+        }
+        .theme-dark .text-gray-800 {
+            color: #f9fafb !important;
+        }
+        .theme-dark .border-gray-200 {
+            border-color: #4b5563 !important;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 300px;
+            text-align: center;
+        }
+        .fullscreen-chart {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: white;
+            z-index: 999;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <div></div>
+                <div>
+                    <h1 class="text-4xl font-bold text-gray-800 mb-2">Data Dashboard Tool</h1>
+                    <p class="text-gray-600">Upload CSV/Excel files and create beautiful visualizations</p>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="toggleTheme()" class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-2 rounded-md text-sm">
+                        🌙 Theme
+                    </button>
+                    <button onclick="showHelp()" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-md text-sm">
+                        ❓ Help
+                    </button>
+                    <button onclick="saveProject()" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-md text-sm">
+                        💾 Save
+                    </button>
+                    <button onclick="loadProject()" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-md text-sm">
+                        📂 Load
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- File Upload Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Upload Your Data</h2>
+            <div class="drop-zone" id="dropZone">
+                <input type="file" id="fileInput" accept=".csv,.xls,.xlsx" class="hidden">
+                <div class="text-center">
+                    <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <p class="text-lg text-gray-600 mb-2">Drop your CSV or Excel file here</p>
+                    <p class="text-sm text-gray-400 mb-4">or</p>
+                    <button onclick="document.getElementById('fileInput').click()" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition-colors">
+                        Choose File
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Preview Section -->
+        <div id="dataPreview" class="hidden bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Data Preview</h2>
+            <div class="table-container">
+                <table id="dataTable" class="min-w-full bg-white border border-gray-200">
+                    <thead id="tableHeader" class="bg-gray-50"></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Analysis Section -->
+        <div id="analysisSection" class="hidden bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Data Analysis</h2>
+            <div id="statisticsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        </div>
+
+        <!-- Filters Section -->
+        <div id="filtersSection" class="hidden">
+            <div class="filter-section">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Filters</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Column</label>
+                        <select id="filterColumn" class="w-full p-2 border border-gray-300 rounded-md">
+                            <option value="">Select column</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Value</label>
+                        <input type="text" id="filterValue" placeholder="Enter value" class="w-full p-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex items-end">
+                        <button onclick="applyFilter()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md mr-2">Apply</button>
+                        <button onclick="clearFilters()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart Configuration Section -->
+        <div id="chartConfigSection" class="hidden">
+            <div class="chart-controls">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Chart Configuration</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Chart Type</label>
+                        <select id="chartType" onchange="updateChart()" class="w-full p-2 border border-gray-300 rounded-md">
+                            <option value="bar">Bar Chart</option>
+                            <option value="line">Line Chart</option>
+                            <option value="pie">Pie Chart</option>
+                            <option value="doughnut">Doughnut Chart</option>
+                            <option value="scatter">Scatter Plot</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">X-Axis</label>
+                        <select id="xAxis" onchange="updateChart()" class="w-full p-2 border border-gray-300 rounded-md">
+                            <option value="">Select column</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Y-Axis</label>
+                        <select id="yAxis" onchange="updateChart()" class="w-full p-2 border border-gray-300 rounded-md">
+                            <option value="">Select column</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Chart Title</label>
+                        <input type="text" id="chartTitle" placeholder="Chart Title" onchange="updateChart()" class="w-full p-2 border border-gray-300 rounded-md">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div id="dashboardSection" class="hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-semibold text-gray-800">Dashboard</h2>
+                    <div class="space-x-2">
+                        <button onclick="addChart()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md">Add Chart</button>
+                        <button onclick="showChartTemplates()" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md">Templates</button>
+                        <button onclick="exportDashboard('pdf')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md">Export PDF</button>
+                        <button onclick="exportDashboard('png')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md">Export PNG</button>
+                        <button onclick="exportDashboard('excel')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md">Export Excel</button>
+                        <button onclick="clearAllCharts()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md">Clear All</button>
+                    </div>
+                </div>
+                <div id="chartsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <h3 class="text-lg font-semibold mb-4">Confirm Action</h3>
+            <p id="confirmMessage" class="mb-6"></p>
+            <div class="flex justify-center space-x-4">
+                <button onclick="confirmAction()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md">Yes</button>
+                <button onclick="cancelAction()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="templateModal" class="modal">
+        <div class="modal-content" style="width: 500px;">
+            <h3 class="text-lg font-semibold mb-4">Chart Templates</h3>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <button onclick="applyTemplate('sales')" class="bg-blue-100 hover:bg-blue-200 p-4 rounded-lg text-left">
+                    <h4 class="font-semibold">Sales Dashboard</h4>
+                    <p class="text-sm text-gray-600">Revenue, quantity, and regional analysis</p>
+                </button>
+                <button onclick="applyTemplate('financial')" class="bg-green-100 hover:bg-green-200 p-4 rounded-lg text-left">
+                    <h4 class="font-semibold">Financial Report</h4>
+                    <p class="text-sm text-gray-600">Income, expenses, and profit margins</p>
+                </button>
+                <button onclick="applyTemplate('marketing')" class="bg-purple-100 hover:bg-purple-200 p-4 rounded-lg text-left">
+                    <h4 class="font-semibold">Marketing Analytics</h4>
+                    <p class="text-sm text-gray-600">Campaign performance and ROI</p>
+                </button>
+                <button onclick="applyTemplate('inventory')" class="bg-yellow-100 hover:bg-yellow-200 p-4 rounded-lg text-left">
+                    <h4 class="font-semibold">Inventory Management</h4>
+                    <p class="text-sm text-gray-600">Stock levels and product analysis</p>
+                </button>
+            </div>
+            <button onclick="closeModal('templateModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md">Close</button>
+        </div>
+    </div>
+
+    <div id="helpModal" class="modal">
+        <div class="modal-content" style="width: 600px;">
+            <h3 class="text-lg font-semibold mb-4">Help & Instructions</h3>
+            <div class="text-left space-y-3">
+                <div>
+                    <h4 class="font-semibold">Getting Started:</h4>
+                    <p class="text-sm text-gray-600">1. Upload your CSV or Excel file using drag & drop or file picker</p>
+                    <p class="text-sm text-gray-600">2. Review your data in the preview section</p>
+                    <p class="text-sm text-gray-600">3. Use filters to narrow down your data</p>
+                </div>
+                <div>
+                    <h4 class="font-semibold">Creating Charts:</h4>
+                    <p class="text-sm text-gray-600">1. Select chart type and axes in the configuration section</p>
+                    <p class="text-sm text-gray-600">2. Click 'Add Chart' to create visualizations</p>
+                    <p class="text-sm text-gray-600">3. Drag charts to rearrange them</p>
+                </div>
+                <div>
+                    <h4 class="font-semibold">Keyboard Shortcuts:</h4>
+                    <p class="text-sm text-gray-600">Ctrl+S: Save project | Ctrl+O: Load project | Ctrl+E: Export PNG</p>
+                </div>
+            </div>
+            <button onclick="closeModal('helpModal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md mt-4">Close</button>
+        </div>
+    </div>
+
+    <input type="file" id="loadProjectInput" accept=".json" style="display: none;">
+
+    <script src="app.js"></script>
+</body>
+</html>
